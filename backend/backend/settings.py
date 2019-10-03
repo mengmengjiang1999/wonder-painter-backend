@@ -107,8 +107,7 @@ AUTH_PASSWORD_VALIDATORS = [
 
 LANGUAGE_CODE = 'en-us'
 
-#TIME_ZONE = 'UTC'
-TIME_ZONE = 'Asia/Shanghai'
+TIME_ZONE = 'UTC'
 
 USE_I18N = True
 
@@ -126,3 +125,11 @@ MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 MEDIA_URL = 'media/'
 
 AVATAR_ROOT = os.path.join(MEDIA_ROOT,'avatars')
+
+EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+EMAIL_HOST = 'smtp.163.com'  # 邮箱服务地址 这里是163邮箱的
+EMAIL_PORT = 25  # 端口号
+EMAIL_HOST_USER = 'removed@example.com'  # 邮箱帐号
+EMAIL_HOST_PASSWORD = 'REMOVED_ROTATE_SMTP_CREDENTIAL'  # 邮箱密码
+
+CONFIRM_HOURS = 72

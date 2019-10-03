@@ -23,6 +23,7 @@ urlpatterns = [
     path('admin/', admin.site.urls),
     path('register/', views.register),
     path('login/', views.login),
+    path('validate/', views.validate)
 ] + [
     re_path(r'^media/(?P<path>.*)$', serve, {'document_root':MEDIA_ROOT})
 ]
