@@ -1,6 +1,7 @@
 " This is a test module for backend "
+import json
 from django.test import Client
-import pytest, json
+import pytest
 
 @pytest.mark.django_db
 def test_register():
