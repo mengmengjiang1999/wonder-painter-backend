@@ -15,8 +15,8 @@ Including another URLconf
 """
 from django.contrib import admin
 from django.urls import path, re_path
-from painter import views
 from django.views.static import serve
+from painter import views
 from .settings import MEDIA_ROOT
 
 urlpatterns = [

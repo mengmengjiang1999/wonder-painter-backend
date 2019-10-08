@@ -1,5 +1,6 @@
-from django.db import models
+" models.py "
 from datetime import datetime
+from django.db import models
 
 # Create your models here.
 
@@ -13,12 +14,12 @@ class User(models.Model):
     avatar：头像
     valid：是否进行邮箱验证
     """
-    username = models.CharField(max_length = 25)
-    password = models.CharField(max_length = 25)
-    nickname = models.CharField(max_length = 25)
-    email = models.CharField(max_length = 256)
-    avatar = models.ImageField(upload_to = 'avatars')
-    valid = models.BooleanField(default = False)
+    username = models.CharField(max_length=25)
+    password = models.CharField(max_length=25)
+    nickname = models.CharField(max_length=25)
+    email = models.CharField(max_length=256)
+    avatar = models.ImageField(upload_to='avatars')
+    valid = models.BooleanField(default=False)
 
     def __str__(self):
         return self.username

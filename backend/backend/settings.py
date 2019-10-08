@@ -124,7 +124,7 @@ STATIC_URL = '/static/'
 MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 MEDIA_URL = 'media/'
 
-AVATAR_ROOT = os.path.join(MEDIA_ROOT,'avatars')
+AVATAR_ROOT = os.path.join(MEDIA_ROOT, 'avatars')
 
 EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
 EMAIL_HOST = 'smtp.163.com'  # 邮箱服务地址 这里是163邮箱的

@@ -1,19 +1,21 @@
-from random import Random # 用于生成随机码 
+" For sending email to verify. "
+from random import Random # 用于生成随机码
 from django.core.mail import send_mail # 发送邮件模块
-from .models import EmailVerifyRecord # 邮箱验证model
 from django.conf import settings  # setting.py添加的的配置信息
+from .models import EmailVerifyRecord # 邮箱验证model
 
-# 生成随机字符串
 def random_str(randomlength=20):
-    str = ''
+    ''' 生成一个随机的字符串，默认长度为20 '''
+    ret = ''
     chars = 'AaBbCcDdEeFfGgHhIiJjKkLlMmNnOoPpQqRrSsTtUuVvWwXxYyZz0123456789'
     length = len(chars) - 1
     random = Random()
     for i in range(randomlength):
-        str+=chars[random.randint(0, length)]
-    return str
+        ret += chars[random.randint(0, length)]
+    return ret
 
 def send_email(email, username, code):
+    ''' 发送邮件，邮箱为email，验证者用户名为username，验证码为code '''
     from django.core.mail import EmailMultiAlternatives
     href = 'http://{0}/validate/?username={1}&code={2}'.format('127.0.0.1:8080', username, code)
 
@@ -31,4 +33,3 @@ def send_email(email, username, code):
     msg = EmailMultiAlternatives(subject, text_content, settings.EMAIL_HOST_USER, [email])
     msg.attach_alternative(html_content, "text/html")
     msg.send()
-
