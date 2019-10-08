@@ -1,3 +1,4 @@
+" views.py "
 from django.shortcuts import render
 from django.http import HttpResponse, JsonResponse
 from painter.models import User, EmailVerifyRecord
