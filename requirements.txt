@@ -4,8 +4,3 @@ pylint-django==2.0.11
 pylint-plugin-utils==0.6
 pytest==5.2.1
 pytest-django==3.5.1
-python-apt==1.6.3
-python-dateutil==2.8.0
-python-debian==0.1.32
-PyYAML==3.13
-uWSGI==2.0.18
