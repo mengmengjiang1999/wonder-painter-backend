@@ -16,7 +16,7 @@ job1:
   - coverage run -m pytest
   - TEST_RET=$?
   - coverage report
-  - pylint --load-plugins=pylint_django --ignore=$(echo *.txt *.md *.ini | tr ' ' ',') * --rcfile='pylint.conf'
+  - pylint --load-plugins=pylint_django --ignore=$(echo *.txt *.md *.ini *.conf| tr ' ' ',') * --rcfile='pylint.conf'
   - LINT_RET=$?
   - if [ $TEST_RET \> 0 ]; then exit $TEST_RET; fi; 
   - exit $LINT_RET
