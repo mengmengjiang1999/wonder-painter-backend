@@ -1,0 +1,22 @@
+stages:
+  - test
+
+job1:
+  stage: test
+
+  image: python:3.7.4
+
+  before_script:
+  - pip install -i https://pypi.tuna.tsinghua.edu.cn/simple -r requirements.txt
+  - pip install -i https://pypi.tuna.tsinghua.edu.cn/simple coverage pylint pylint-django pytest pytest-django
+
+  coverage: '/^TOTAL\s+\d+\s+\d+\s+(\d+\%)$/'
+
+  script:
+  - coverage run -m pytest
+  - TEST_RET=$?
+  - coverage report
+  - pylint --load-plugins=pylint_django --ignore=$(echo *.txt *.md *.ini | tr ' ' ',') *
+  - LINT_RET=$?
+  - if [ $TEST_RET \> 0 ]; then exit $TEST_RET; fi; 
+  - exit $LINT_RET
