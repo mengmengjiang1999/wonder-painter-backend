@@ -1,6 +1,6 @@
 " models.py "
-from datetime import datetime
 from django.db import models
+from django.utils import timezone
 
 # Create your models here.
 
@@ -14,8 +14,8 @@ class User(models.Model):
     avatar：头像
     valid：是否进行邮箱验证
     """
-    username = models.CharField(max_length=25)
-    password = models.CharField(max_length=25)
+    username = models.CharField(max_length=25, unique=True)
+    password = models.CharField(max_length=128)
     nickname = models.CharField(max_length=25)
     email = models.CharField(max_length=256)
     avatar = models.ImageField(upload_to='avatars')
@@ -39,6 +39,6 @@ class EmailVerifyRecord(models.Model):
     email = models.EmailField(max_length=256, verbose_name=u"邮箱")
     # 包含注册验证和找回验证
     send_type = models.IntegerField()
-    send_time = models.DateTimeField(verbose_name=u"发送时间", default=datetime.now())
+    send_time = models.DateTimeField(verbose_name=u"发送时间", default=timezone.now)
     def __str__(self):
         return '{0}({1})'.format(self.code, self.email)

@@ -1,10 +1,8 @@
 " views.py "
-from shutil import copyfile
-from datetime import datetime, timezone
-import os
+from datetime import datetime, timedelta, timezone
 import re
-from django.shortcuts import render
-from django.http import HttpResponse, JsonResponse
+from django.contrib.auth.hashers import check_password, make_password
+from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.conf import settings
 from painter.models import User, EmailVerifyRecord
@@ -41,7 +39,7 @@ def register(request):
     email = request.POST.get('email')
     if len(username) > NAME_MAX_LEN or not username.replace('_', '0').isalnum():
         return JsonResponse({'message': 'Username format error'}, status=400)
-    if len(password) > NAME_MAX_LEN or not password.replace('_', '0').isalnum():
+    if not 8 <= len(password) <= NAME_MAX_LEN or not password.replace('_', '0').isalnum():
         return JsonResponse({'message': 'Password format error'}, status=400)
     if len(nickname) > NAME_MAX_LEN:
         return JsonResponse({'message': 'Nickname format error'}, status=400)
@@ -50,12 +48,23 @@ def register(request):
     if len(User.objects.filter(username=username)) != 0:
         return JsonResponse({'message': 'Repeat username'}, status=400)
     if request.FILES.get('avatar') is None:
-        copyfile(os.path.join(settings.AVATAR_ROOT, '^default.jpg'), os.path.join(settings.AVATAR_ROOT, username+'.jpg'))
-        User.objects.create(username=username, password=password, nickname=nickname, email=email)
+        User.objects.create(
+            username=username,
+            password=make_password(password),
+            nickname=nickname,
+            email=email,
+            avatar='avatars/^default.jpg',
+        )
     else:
         avatar = request.FILES.get('avatar')
         avatar.name = username + '.jpg'
-        User.objects.create(username=username, password=password, nickname=nickname, email=email, avatar=avatar)
+        User.objects.create(
+            username=username,
+            password=make_password(password),
+            nickname=nickname,
+            email=email,
+            avatar=avatar,
+        )
 
     code = random_str(20)
     send_email(email, username, code)
@@ -83,7 +92,7 @@ def login(request):
     if len(items) == 0:
         return JsonResponse({'message': 'No such user'}, status=400)
     item = items[0]
-    if item.password != password:
+    if not check_password(password, item.password):
         return JsonResponse({'message': 'Wrong password'}, status=400)
     if not item.valid:
         return JsonResponse({'message': 'The user has not been validated.'}, status=400)
@@ -109,7 +118,7 @@ def validate(request):
     if len(items) == 0:
         return JsonResponse({'message': 'Verify Failed.'}, status=400)
     item = items[0]
-    if (datetime.now(timezone.utc) - item.send_time).seconds / 60 / 60 > settings.CONFIRM_HOURS:
+    if datetime.now(timezone.utc) - item.send_time > timedelta(hours=settings.CONFIRM_HOURS):
         return JsonResponse({'message': 'Expired'}, status=400)
     user = User.objects.filter(username=username)[0]
     user.valid = True

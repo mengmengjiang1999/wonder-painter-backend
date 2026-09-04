@@ -1,0 +1,11 @@
+.git
+.github
+.env
+.venv
+__pycache__
+*.pyc
+.coverage
+.pytest_cache
+backend/db.sqlite3
+backend/media/avatars/*
+!backend/media/avatars/^default.jpg

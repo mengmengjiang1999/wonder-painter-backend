@@ -1,23 +1,20 @@
-" For sending email to verify. "
-from random import Random # 用于生成随机码
-from django.core.mail import send_mail # 发送邮件模块
-from django.conf import settings  # setting.py添加的的配置信息
-from .models import EmailVerifyRecord # 邮箱验证model
+"""Helpers for email verification."""
+import secrets
+import string
+from urllib.parse import urlencode
+
+from django.conf import settings
+from django.core.mail import EmailMultiAlternatives
 
 def random_str(randomlength=20):
     ''' 生成一个随机的字符串，默认长度为20 '''
-    ret = ''
-    chars = 'AaBbCcDdEeFfGgHhIiJjKkLlMmNnOoPpQqRrSsTtUuVvWwXxYyZz0123456789'
-    length = len(chars) - 1
-    random = Random()
-    for i in range(randomlength):
-        ret += chars[random.randint(0, length)]
-    return ret
+    chars = string.ascii_letters + string.digits
+    return ''.join(secrets.choice(chars) for _ in range(randomlength))
 
 def send_email(email, username, code):
     ''' 发送邮件，邮箱为email，验证者用户名为username，验证码为code '''
-    from django.core.mail import EmailMultiAlternatives
-    href = 'http://{0}/validate/?username={1}&code={2}'.format('127.0.0.1:8080', username, code)
+    query = urlencode({'username': username, 'code': code})
+    href = '{0}/validate/?{1}'.format(settings.APP_BASE_URL, query)
 
     subject = '来自Wonder Painter的注册确认邮件'
 
