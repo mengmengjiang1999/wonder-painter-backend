@@ -1,127 +1,175 @@
-" views.py "
-from datetime import datetime, timedelta, timezone
-import re
-from django.contrib.auth.hashers import check_password, make_password
-from django.http import JsonResponse
-from django.views.decorators.csrf import csrf_exempt
+"""HTTP endpoints for registration and session authentication."""
+
+import logging
+from datetime import timedelta
+
 from django.conf import settings
-from painter.models import User, EmailVerifyRecord
-from .send_email import random_str, send_email
+from django.contrib.auth import authenticate
+from django.contrib.auth import login as auth_login
+from django.contrib.auth import logout as auth_logout
+from django.contrib.auth.models import User
+from django.db import IntegrityError, transaction
+from django.http import JsonResponse
+from django.middleware.csrf import get_token
+from django.utils import timezone
+from django.views.decorators.csrf import ensure_csrf_cookie
+from django.views.decorators.http import require_GET, require_POST
 
-# Create your views here.
+from .forms import LoginForm, RegistrationForm, ResendVerificationForm
+from .models import EmailVerification, Profile
+from .send_email import create_token, digest_token, send_verification_email
+from .throttling import rate_limit
 
-NAME_MAX_LEN = 25
+LOGGER = logging.getLogger(__name__)
 
 
-@csrf_exempt
+def error_response(form):
+    return JsonResponse(
+        {"message": "Invalid input", "errors": form.errors.get_json_data()},
+        status=400,
+    )
+
+
+@ensure_csrf_cookie
+@require_GET
+def csrf_token(request):
+    """Set a CSRF cookie and return the token for API clients."""
+    return JsonResponse({"csrfToken": get_token(request)})
+
+
+@require_POST
+@rate_limit("register", limit=10, window_seconds=3600)
 def register(request):
-    """
-    用于注册，使用POST，参数如下：
-    username: 用户名，需要唯一，仅允许大小写字母、下划线和数字，不长于25位
-    password: 密码，长度不低于8位，不长于25位
-    email: 邮箱，需要验证之后才能使用
-    nickname: 昵称，可以与其他人重名，支持中文名
-    avatar: 头像图片，可以不上传，此时将使用默认头像
-    """
-    if request.method != 'POST':
-        return JsonResponse({'message': 'Not POST'}, status=400)
-    if request.POST.get('username') is None:
-        return JsonResponse({'message': 'No username'}, status=400)
-    if request.POST.get('password') is None:
-        return JsonResponse({'message': 'No password'}, status=400)
-    if request.POST.get('nickname') is None:
-        return JsonResponse({'message': 'No nickname'}, status=400)
-    if request.POST.get('email') is None:
-        return JsonResponse({'message': 'No email'}, status=400)
-    username = request.POST.get('username')
-    password = request.POST.get('password')
-    nickname = request.POST.get('nickname')
-    email = request.POST.get('email')
-    if len(username) > NAME_MAX_LEN or not username.replace('_', '0').isalnum():
-        return JsonResponse({'message': 'Username format error'}, status=400)
-    if not 8 <= len(password) <= NAME_MAX_LEN or not password.replace('_', '0').isalnum():
-        return JsonResponse({'message': 'Password format error'}, status=400)
-    if len(nickname) > NAME_MAX_LEN:
-        return JsonResponse({'message': 'Nickname format error'}, status=400)
-    if not re.match(r'^[a-zA-Z0-9_-]+(\.[a-zA-Z0-9_-]+){0,4}@[a-zA-Z0-9_-]+(\.[a-zA-Z0-9_-]+){0,4}$', email):
-        return JsonResponse({'message': 'Email format error'}, status=400)
-    if len(User.objects.filter(username=username)) != 0:
-        return JsonResponse({'message': 'Repeat username'}, status=400)
-    if request.FILES.get('avatar') is None:
-        User.objects.create(
-            username=username,
-            password=make_password(password),
-            nickname=nickname,
-            email=email,
-            avatar='avatars/^default.jpg',
-        )
-    else:
-        avatar = request.FILES.get('avatar')
-        avatar.name = username + '.jpg'
-        User.objects.create(
-            username=username,
-            password=make_password(password),
-            nickname=nickname,
-            email=email,
-            avatar=avatar,
-        )
+    """Create an inactive user and send an email-verification link."""
+    form = RegistrationForm(request.POST, request.FILES)
+    if not form.is_valid():
+        return error_response(form)
 
-    code = random_str(20)
-    send_email(email, username, code)
-    EmailVerifyRecord.objects.create(username=username, code=code, email=email, send_type=1)
-    return JsonResponse({'message': 'Register successfully, please verify your account by email in 72 hours.'}, status=200)
+    data = form.cleaned_data
+    if User.objects.filter(username__iexact=data["username"]).exists():
+        return JsonResponse({"message": "Username or email unavailable"}, status=409)
+    if Profile.objects.filter(email_key=data["email"]).exists():
+        return JsonResponse({"message": "Username or email unavailable"}, status=409)
+
+    token = create_token()
+    try:
+        with transaction.atomic():
+            user = User.objects.create_user(
+                username=data["username"],
+                email=data["email"],
+                password=data["password"],
+                is_active=False,
+            )
+            Profile.objects.create(
+                user=user,
+                email_key=data["email"],
+                nickname=data["nickname"],
+                avatar=data.get("avatar") or "",
+            )
+            EmailVerification.objects.create(
+                user=user,
+                token_digest=digest_token(token),
+                expires_at=timezone.now() + timedelta(hours=settings.CONFIRM_HOURS),
+            )
+            send_verification_email(user, token)
+    except IntegrityError:
+        return JsonResponse({"message": "Username or email unavailable"}, status=409)
+    except Exception:
+        LOGGER.exception("Registration email could not be sent")
+        return JsonResponse({"message": "Verification email unavailable"}, status=503)
+
+    return JsonResponse(
+        {"message": "Registration successful; check your email to activate the account."},
+        status=201,
+    )
 
 
-@csrf_exempt
+@require_POST
+@rate_limit("resend-verification", limit=5, window_seconds=3600)
+def resend_verification(request):
+    """Replace and resend the verification token for an inactive account."""
+    form = ResendVerificationForm(request.POST)
+    if not form.is_valid():
+        return error_response(form)
+
+    user = User.objects.filter(username__iexact=form.cleaned_data["username"]).first()
+    if user is None or user.is_active:
+        return JsonResponse({"message": "If the account is pending, a new email was sent."})
+
+    token = create_token()
+    try:
+        with transaction.atomic():
+            EmailVerification.objects.update_or_create(
+                user=user,
+                defaults={
+                    "token_digest": digest_token(token),
+                    "sent_at": timezone.now(),
+                    "expires_at": timezone.now() + timedelta(hours=settings.CONFIRM_HOURS),
+                },
+            )
+            send_verification_email(user, token)
+    except Exception:
+        LOGGER.exception("Verification email could not be resent")
+        return JsonResponse({"message": "Verification email unavailable"}, status=503)
+    return JsonResponse({"message": "If the account is pending, a new email was sent."})
+
+
+@require_POST
+@rate_limit("login", limit=20, window_seconds=300)
 def login(request):
-    """
-    用于登录，使用POST，参数如下：
-    username: 用户名，需要唯一，仅允许大小写字母、下划线和数字，不长于25位
-    password: 密码，长度不低于8位，不长于25位
-    TODO
-    """
-    if request.method != 'POST':
-        return JsonResponse({'message': 'Not POST'}, status=400)
-    if request.POST.get('username') is None:
-        return JsonResponse({'message': 'No username'}, status=400)
-    if request.POST.get('password') is None:
-        return JsonResponse({'message': 'No password'}, status=400)
-    username = request.POST.get('username')
-    password = request.POST.get('password')
-    items = User.objects.filter(username=username)
-    if len(items) == 0:
-        return JsonResponse({'message': 'No such user'}, status=400)
-    item = items[0]
-    if not check_password(password, item.password):
-        return JsonResponse({'message': 'Wrong password'}, status=400)
-    if not item.valid:
-        return JsonResponse({'message': 'The user has not been validated.'}, status=400)
-    return JsonResponse({'message': 'Login successfully'}, status=200)
+    """Authenticate a user and establish a Django session."""
+    form = LoginForm(request.POST)
+    if not form.is_valid():
+        return error_response(form)
+    user = authenticate(
+        request,
+        username=form.cleaned_data["username"],
+        password=form.cleaned_data["password"],
+    )
+    if user is None:
+        return JsonResponse({"message": "Invalid credentials or inactive account"}, status=401)
+    auth_login(request, user)
+    return JsonResponse({"message": "Login successful", "username": user.username})
 
 
+@require_POST
+def logout(request):
+    """End the current Django session."""
+    auth_logout(request)
+    return JsonResponse({"message": "Logout successful"})
+
+
+@require_GET
+def session_status(request):
+    """Return the current session authentication state."""
+    if not request.user.is_authenticated:
+        return JsonResponse({"authenticated": False})
+    return JsonResponse({"authenticated": True, "username": request.user.username})
+
+
+@require_GET
+@rate_limit("validate", limit=30, window_seconds=300)
 def validate(request):
-    """
-    用于验证邮箱，使用GET，参数如下：
-    username：验证者用户名
-    code：验证码
-    TODO
-    """
-    if request.method != 'GET':
-        return JsonResponse({'message': 'Not GET'}, status=400)
-    if request.GET.get('username') is None:
-        return JsonResponse({'message': 'No username'}, status=400)
-    if request.GET.get('code') is None:
-        return JsonResponse({'message': 'No code'}, status=400)
-    username = request.GET.get('username')
-    code = request.GET.get('code')
-    items = EmailVerifyRecord.objects.filter(username=username, code=code, send_type=1)
-    if len(items) == 0:
-        return JsonResponse({'message': 'Verify Failed.'}, status=400)
-    item = items[0]
-    if datetime.now(timezone.utc) - item.send_time > timedelta(hours=settings.CONFIRM_HOURS):
-        return JsonResponse({'message': 'Expired'}, status=400)
-    user = User.objects.filter(username=username)[0]
-    user.valid = True
-    user.save()
-    item.delete()
-    return JsonResponse({'message': 'Verify Successfully.'}, status=200)
+    """Consume a valid email token and activate its user."""
+    username = request.GET.get("username", "")
+    token = request.GET.get("token", "")
+    if not username or not token:
+        return JsonResponse({"message": "Invalid verification link"}, status=400)
+
+    with transaction.atomic():
+        verification = (
+            EmailVerification.objects.select_for_update()
+            .select_related("user")
+            .filter(user__username=username, token_digest=digest_token(token))
+            .first()
+        )
+        if verification is None:
+            return JsonResponse({"message": "Invalid verification link"}, status=400)
+        if verification.expires_at <= timezone.now():
+            verification.delete()
+            return JsonResponse({"message": "Verification link expired"}, status=400)
+        user = verification.user
+        user.is_active = True
+        user.save(update_fields=["is_active"])
+        verification.delete()
+    return JsonResponse({"message": "Verification successful"})

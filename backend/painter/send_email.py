@@ -1,32 +1,41 @@
 """Helpers for email verification."""
+
+import hashlib
 import secrets
-import string
 from urllib.parse import urlencode
 
 from django.conf import settings
 from django.core.mail import EmailMultiAlternatives
 
-def random_str(randomlength=20):
-    ''' 生成一个随机的字符串，默认长度为20 '''
-    chars = string.ascii_letters + string.digits
-    return ''.join(secrets.choice(chars) for _ in range(randomlength))
 
-def send_email(email, username, code):
-    ''' 发送邮件，邮箱为email，验证者用户名为username，验证码为code '''
-    query = urlencode({'username': username, 'code': code})
-    href = '{0}/validate/?{1}'.format(settings.APP_BASE_URL, query)
+def create_token():
+    """Return a high-entropy token suitable for an emailed link."""
+    return secrets.token_urlsafe(32)
 
-    subject = '来自Wonder Painter的注册确认邮件'
 
-    text_content = '''欢迎注册Wonder Painter
-                    如果你看到这条消息，说明你的邮箱服务器不提供HTML链接功能，请手动进入 {0} 进行验证'''.format(href)
+def digest_token(token):
+    """Return the non-reversible representation stored in the database."""
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
-    html_content = '''
-                        <p>感谢注册<a href="{0}" target=blank>{0}</a></p>
-                        <p>请点击站点链接完成注册确认！</p>
-                        <p>此链接有效期为72小时！</p>
-                        '''.format(href)
 
-    msg = EmailMultiAlternatives(subject, text_content, settings.EMAIL_HOST_USER, [email])
+def send_verification_email(user, token):
+    """Send a single-use account verification link."""
+    query = urlencode({"username": user.username, "token": token})
+    href = f"{settings.APP_BASE_URL}/validate/?{query}"
+
+    subject = "来自Wonder Painter的注册确认邮件"
+
+    text_content = (
+        "欢迎注册 Wonder Painter。\n"
+        f"请在 {settings.CONFIRM_HOURS} 小时内访问以下链接完成验证：\n{href}"
+    )
+
+    html_content = (
+        "<p>感谢注册 Wonder Painter。</p>"
+        f'<p><a href="{href}" target="_blank" rel="noopener noreferrer">完成邮箱验证</a></p>'
+        f"<p>此链接有效期为 {settings.CONFIRM_HOURS} 小时。</p>"
+    )
+
+    msg = EmailMultiAlternatives(subject, text_content, settings.DEFAULT_FROM_EMAIL, [user.email])
     msg.attach_alternative(html_content, "text/html")
     msg.send()

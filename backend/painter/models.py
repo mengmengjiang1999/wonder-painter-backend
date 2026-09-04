@@ -1,44 +1,37 @@
-" models.py "
+"""Database models for the Wonder Painter backend."""
+
+from django.conf import settings
 from django.db import models
 from django.utils import timezone
 
-# Create your models here.
 
-class User(models.Model):
-    """
-    用户类，用于存储用户信息。
-    username：用户名
-    password：密码
-    nickname：昵称
-    email：邮箱
-    avatar：头像
-    valid：是否进行邮箱验证
-    """
-    username = models.CharField(max_length=25, unique=True)
-    password = models.CharField(max_length=128)
+class Profile(models.Model):
+    """Wonder Painter-specific fields attached to Django's auth user."""
+
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="profile",
+    )
+    email_key = models.CharField(max_length=254, unique=True, editable=False)
     nickname = models.CharField(max_length=25)
-    email = models.CharField(max_length=256)
-    avatar = models.ImageField(upload_to='avatars')
-    valid = models.BooleanField(default=False)
+    avatar = models.ImageField(upload_to="avatars", blank=True)
 
     def __str__(self):
-        return self.username
+        return self.user.username
 
 
-class EmailVerifyRecord(models.Model):
-    """
-    邮箱验证类，用于进行邮箱验证。
-    username：进行邮箱验证的用户名
-    code：验证码
-    email：邮箱
-    send_type：验证码类型，1表示验证邮箱，2表示找回密码
-    send_time：验证码发送时间
-    """
-    username = models.CharField(max_length=25)
-    code = models.CharField(max_length=20, verbose_name=u"验证码")
-    email = models.EmailField(max_length=256, verbose_name=u"邮箱")
-    # 包含注册验证和找回验证
-    send_type = models.IntegerField()
-    send_time = models.DateTimeField(verbose_name=u"发送时间", default=timezone.now)
+class EmailVerification(models.Model):
+    """A single-use, hashed email-verification token for a user."""
+
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="email_verification",
+    )
+    token_digest = models.CharField(max_length=64, unique=True)
+    sent_at = models.DateTimeField(default=timezone.now)
+    expires_at = models.DateTimeField()
+
     def __str__(self):
-        return '{0}({1})'.format(self.code, self.email)
+        return f"Email verification for {self.user.username}"
