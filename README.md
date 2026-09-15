@@ -37,6 +37,12 @@ python backend/manage.py runserver
 
 Django 不会自动读取 `.env`；上面的命令只适用于兼容 POSIX shell 的本地开发环境，也可以在 IDE 中配置同名变量。默认邮件后端把验证邮件输出到终端，不需要 SMTP 账号。服务地址为 `http://127.0.0.1:8000`。
 
+### 本地 SMTP 凭据
+
+仅在需要真实发信时，编辑项目根目录的 `.env`，填写 `EMAIL_HOST`、`EMAIL_HOST_USER`、`EMAIL_HOST_PASSWORD` 和 `DEFAULT_FROM_EMAIL`，并设置 `EMAIL_BACKEND=django.core.mail.backends.smtp.EmailBackend`。密码使用邮箱服务商新生成的 SMTP 授权码；不要复用历史提交中出现过的值。按服务商要求设置端口和 TLS。
+
+执行 `chmod 600 .env` 限制本地访问，再用上面的 `set -a; source .env; set +a` 加载配置并重启服务。若值包含 shell 特殊字符，用单引号包住值（值本身包含单引号时须正确转义）。`.env` 和 `.env.*` 本地配置均被 Git 忽略，只有不含凭据的 `.env.example` 可提交；Docker 构建也排除这些本地配置。不要覆盖已有 `.env`，不要把真实密码写进示例、命令行或日志。
+
 `requirements.lock` 固定生产依赖，`requirements-dev.lock` 额外固定测试与格式检查工具；`requirements*.txt` 保存允许升级的版本范围。
 
 ## Docker 部署
@@ -121,7 +127,7 @@ ruff format --check backend
 
 - 仓库不跟踪运行数据库、用户上传、覆盖率文件、缓存、虚拟环境或编辑器交换文件。
 - 密码由 Django 认证系统哈希存储；邮箱验证令牌使用密码学安全随机源，数据库仅保存摘要。
-- 早期 Git 历史曾包含开发密钥和 SMTP 凭据。仓库历史虽已清理，但任何曾提交的凭据都必须视为已泄露，并在对应服务提供方撤销或轮换；改写 Git 历史不能使已泄露凭据重新安全。
+- 早期 Git 历史曾包含开发密钥和 SMTP 凭据。2026-09-15 再次核查发现旧提交仍有 SMTP 密码，本次针对该密码清理分支历史。任何曾提交的凭据都必须视为已泄露，并在对应服务提供方撤销或轮换；改写 Git 历史不能使已泄露凭据重新安全。旧克隆、Fork、PR 引用及平台缓存可能仍保存旧提交；历史更新后应重新克隆，避免把旧历史推回远端。
 - 漏洞报告方式和响应范围见 [`SECURITY.md`](SECURITY.md)。
 
 ## 项目状态与许可证
